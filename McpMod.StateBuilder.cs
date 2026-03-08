@@ -1236,14 +1236,36 @@ public static partial class McpMod
         foreach (var power in creature.Powers)
         {
             if (!power.IsVisible) continue;
+
+            // HoverTips resolves all dynamic vars (Amount, DynamicVars, etc.)
+            // The first tip is the power's own description; the rest are extra keywords
+            var allTips = power.HoverTips.ToList();
+            string? resolvedDesc = null;
+            var extraTips = new List<IHoverTip>();
+            foreach (var tip in allTips)
+            {
+                if (tip.Id == power.Id.ToString())
+                {
+                    // This is the power's own hover tip — extract its resolved description
+                    if (tip is HoverTip ht)
+                        resolvedDesc = StripRichTextTags(ht.Description);
+                }
+                else
+                {
+                    extraTips.Add(tip);
+                }
+            }
+            // Fallback to raw SmartDescription if HoverTips extraction failed
+            resolvedDesc ??= SafeGetText(() => power.SmartDescription);
+
             powers.Add(new Dictionary<string, object?>
             {
                 ["id"] = power.Id.Entry,
                 ["name"] = SafeGetText(() => power.Title),
                 ["amount"] = power.DisplayAmount,
                 ["type"] = power.Type.ToString(),
-                ["description"] = SafeGetText(() => power.SmartDescription),
-                ["keywords"] = BuildHoverTips(power.HoverTips.Where(t => t.Id != power.Id.ToString()))
+                ["description"] = resolvedDesc,
+                ["keywords"] = BuildHoverTips(extraTips)
             });
         }
         return powers;
