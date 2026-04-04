@@ -1043,9 +1043,28 @@ public static partial class McpMod
                             || (previewGeneric?.Visible ?? false);
         state["preview_showing"] = previewShowing;
 
-        // Button states
-        var closeButton = screen.GetNodeOrNull<NBackButton>("%Close");
-        state["can_cancel"] = closeButton?.IsEnabled ?? false;
+        // Button states - when a preview is open, cancel goes through the
+        // preview container's Cancel / PreviewCancel button (same path as
+        // the action handler), not the top-level %Close button.
+        bool canCancel = false;
+        if (previewShowing)
+        {
+            foreach (var container in new[] { previewSingle, previewMulti, previewGeneric })
+            {
+                if (container?.Visible == true)
+                {
+                    var cancelBtn = container.GetNodeOrNull<NBackButton>("Cancel")
+                                    ?? container.GetNodeOrNull<NBackButton>("%PreviewCancel");
+                    if (cancelBtn?.IsEnabled == true) { canCancel = true; break; }
+                }
+            }
+        }
+        if (!canCancel)
+        {
+            var closeButton = screen.GetNodeOrNull<NBackButton>("%Close");
+            canCancel = closeButton?.IsEnabled ?? false;
+        }
+        state["can_cancel"] = canCancel;
 
         // Confirm button - search all preview containers and main screen
         bool canConfirm = false;
