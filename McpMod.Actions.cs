@@ -32,6 +32,7 @@ using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Entities.Potions;
 using MegaCrit.Sts2.Core.GameActions;
+using MegaCrit.Sts2.Core.Nodes.Screens.GameOverScreen;
 using MegaCrit.Sts2.Core.Runs;
 
 namespace STS2_MCP;
@@ -40,6 +41,17 @@ public static partial class McpMod
 {
     private static Dictionary<string, object?> ExecuteAction(string action, Dictionary<string, JsonElement> data)
     {
+        // Game over actions work even when run is ending
+        if (action is "game_over_continue" or "game_over_main_menu")
+        {
+            return action switch
+            {
+                "game_over_continue" => ExecuteGameOverContinue(),
+                "game_over_main_menu" => ExecuteGameOverMainMenu(),
+                _ => Error("unreachable")
+            };
+        }
+
         if (!RunManager.Instance.IsInProgress)
             return Error("No run in progress");
 
@@ -1027,6 +1039,42 @@ public static partial class McpMod
         {
             ["status"] = "ok",
             ["message"] = "Proceeding from Crystal Sphere"
+        };
+    }
+
+    private static Dictionary<string, object?> ExecuteGameOverContinue()
+    {
+        var topOverlay = NOverlayStack.Instance?.Peek();
+        if (topOverlay is not NGameOverScreen gameOverScreen)
+            return Error("Game over screen is not active");
+
+        var continueBtn = FindFirst<NGameOverContinueButton>(gameOverScreen);
+        if (continueBtn is not { IsEnabled: true })
+            return Error("Continue button is not available or enabled");
+
+        continueBtn.ForceClick();
+        return new Dictionary<string, object?>
+        {
+            ["status"] = "ok",
+            ["message"] = "Clicked continue on game over screen"
+        };
+    }
+
+    private static Dictionary<string, object?> ExecuteGameOverMainMenu()
+    {
+        var topOverlay = NOverlayStack.Instance?.Peek();
+        if (topOverlay is not NGameOverScreen gameOverScreen)
+            return Error("Game over screen is not active");
+
+        var mainMenuBtn = FindFirst<NReturnToMainMenuButton>(gameOverScreen);
+        if (mainMenuBtn is not { Visible: true, IsEnabled: true })
+            return Error("Main menu button is not available or enabled");
+
+        mainMenuBtn.ForceClick();
+        return new Dictionary<string, object?>
+        {
+            ["status"] = "ok",
+            ["message"] = "Returning to main menu"
         };
     }
 

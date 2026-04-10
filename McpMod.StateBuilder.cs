@@ -32,6 +32,7 @@ using MegaCrit.Sts2.Core.Nodes.Screens.Map;
 using MegaCrit.Sts2.Core.Nodes.Relics;
 using MegaCrit.Sts2.Core.Nodes.Screens.Overlays;
 using MegaCrit.Sts2.Core.Nodes.Screens.Shops;
+using MegaCrit.Sts2.Core.Nodes.Screens.GameOverScreen;
 using MegaCrit.Sts2.Core.Nodes.Screens.TreasureRoomRelic;
 using MegaCrit.Sts2.Core.Rewards;
 using MegaCrit.Sts2.Core.Models.Monsters;
@@ -100,6 +101,17 @@ public static partial class McpMod
         {
             result["state_type"] = "rewards";
             result["rewards"] = BuildRewardsState(rewardsScreen, runState);
+        }
+        else if (topOverlay is NGameOverScreen gameOverScreen)
+        {
+            result["state_type"] = "game_over";
+            var continueBtn = FindFirst<NGameOverContinueButton>(gameOverScreen);
+            var mainMenuBtn = FindFirst<NReturnToMainMenuButton>(gameOverScreen);
+            result["game_over"] = new Dictionary<string, object?>
+            {
+                ["continue_available"] = continueBtn is { IsEnabled: true },
+                ["main_menu_available"] = mainMenuBtn is { Visible: true, IsEnabled: true },
+            };
         }
         else if (topOverlay is IOverlayScreen
                  && topOverlay is not NRewardsScreen
