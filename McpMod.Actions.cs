@@ -41,13 +41,18 @@ public static partial class McpMod
 {
     private static Dictionary<string, object?> ExecuteAction(string action, Dictionary<string, JsonElement> data)
     {
-        // Game over actions work even when run is ending
-        if (action is "game_over_continue" or "game_over_main_menu")
+        // Actions that work outside of a run
+        if (action is "game_over_continue" or "game_over_main_menu"
+            or "click_singleplayer" or "click_standard" or "select_character" or "confirm_character")
         {
             return action switch
             {
                 "game_over_continue" => ExecuteGameOverContinue(),
                 "game_over_main_menu" => ExecuteGameOverMainMenu(),
+                "click_singleplayer" => ExecuteClickSingleplayer(),
+                "click_standard" => ExecuteClickStandard(),
+                "select_character" => ExecuteSelectCharacter(data),
+                "confirm_character" => ExecuteConfirmCharacter(),
                 _ => Error("unreachable")
             };
         }
@@ -1041,6 +1046,102 @@ public static partial class McpMod
             ["message"] = "Proceeding from Crystal Sphere"
         };
     }
+
+    // --- Menu actions ---
+
+    private static Dictionary<string, object?> ExecuteClickSingleplayer()
+    {
+        var root = ((Godot.SceneTree)Godot.Engine.GetMainLoop()).Root;
+        var mainMenu = root.GetNodeOrNull<Godot.Control>("/root/Game/RootSceneContainer/MainMenu");
+        if (mainMenu == null)
+            return Error("Main menu not found");
+
+        var spButton = mainMenu.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>("MainMenuTextButtons/SingleplayerButton");
+        if (spButton is not { IsEnabled: true })
+            return Error("Singleplayer button not available");
+
+        spButton.ForceClick();
+        return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = "Clicked singleplayer" };
+    }
+
+    private static Dictionary<string, object?> ExecuteClickStandard()
+    {
+        var root = ((Godot.SceneTree)Godot.Engine.GetMainLoop()).Root;
+        var mainMenu = root.GetNodeOrNull<Godot.Control>("/root/Game/RootSceneContainer/MainMenu");
+        if (mainMenu == null)
+            return Error("Main menu not found");
+
+        var stdButton = mainMenu.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>("Submenus/SingleplayerSubmenu/StandardButton");
+        if (stdButton is not { Visible: true, IsEnabled: true })
+            return Error("Standard button not available");
+
+        stdButton.ForceClick();
+        return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = "Clicked standard run" };
+    }
+
+    private static Dictionary<string, object?> ExecuteSelectCharacter(Dictionary<string, JsonElement> data)
+    {
+        if (!data.TryGetValue("character", out var charElem))
+            return Error("Missing 'character' parameter");
+
+        string charId = charElem.GetString() ?? "";
+
+        var root = ((Godot.SceneTree)Godot.Engine.GetMainLoop()).Root;
+        var mainMenu = root.GetNodeOrNull<Godot.Control>("/root/Game/RootSceneContainer/MainMenu");
+        if (mainMenu == null)
+            return Error("Main menu not found");
+
+        var charSelectScreen = mainMenu.GetNodeOrNull<Godot.Control>("Submenus/CharacterSelectScreen");
+        if (charSelectScreen is not { Visible: true })
+            return Error("Character select screen not visible");
+
+        var buttonContainer = charSelectScreen.GetNodeOrNull("CharSelectButtons/ButtonContainer");
+        if (buttonContainer == null)
+            return Error("Character button container not found");
+
+        var buttons = FindAll<MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect.NCharacterSelectButton>(buttonContainer);
+
+        // Find by character ID, or by index if it's a number
+        MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect.NCharacterSelectButton? target = null;
+        if (int.TryParse(charId, out int idx))
+        {
+            var unlocked = buttons.Where(b => !b.IsLocked).ToList();
+            if (idx >= 0 && idx < unlocked.Count)
+                target = unlocked[idx];
+        }
+        else
+        {
+            target = buttons.FirstOrDefault(b =>
+                !b.IsLocked && b.Character?.Id.Entry?.Equals(charId, System.StringComparison.OrdinalIgnoreCase) == true);
+        }
+
+        if (target == null)
+            return Error($"Character '{charId}' not found or locked");
+
+        target.Select();
+        return new Dictionary<string, object?>
+        {
+            ["status"] = "ok",
+            ["message"] = $"Selected character: {target.Character?.Id.Entry}"
+        };
+    }
+
+    private static Dictionary<string, object?> ExecuteConfirmCharacter()
+    {
+        var root = ((Godot.SceneTree)Godot.Engine.GetMainLoop()).Root;
+        var mainMenu = root.GetNodeOrNull<Godot.Control>("/root/Game/RootSceneContainer/MainMenu");
+        if (mainMenu == null)
+            return Error("Main menu not found");
+
+        var confirmBtn = mainMenu.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>("Submenus/CharacterSelectScreen/ConfirmButton");
+        if (confirmBtn is not { IsEnabled: true })
+            return Error("Confirm button not available or enabled");
+
+        confirmBtn.ForceClick();
+        return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = "Confirmed character selection" };
+    }
+
+    // --- Game over actions ---
 
     private static Dictionary<string, object?> ExecuteGameOverContinue()
     {

@@ -50,7 +50,7 @@ public static partial class McpMod
         if (!RunManager.Instance.IsInProgress)
         {
             result["state_type"] = "menu";
-            result["message"] = "No run in progress. Player is in the main menu.";
+            result["menu"] = BuildMenuState();
             return result;
         }
 
@@ -1534,5 +1534,60 @@ public static partial class McpMod
         }
 
         return pets;
+    }
+
+    private static Dictionary<string, object?> BuildMenuState()
+    {
+        var result = new Dictionary<string, object?>();
+        var root = ((Godot.SceneTree)Godot.Engine.GetMainLoop()).Root;
+        var mainMenu = root.GetNodeOrNull<Godot.Control>("/root/Game/RootSceneContainer/MainMenu");
+
+        if (mainMenu == null || !mainMenu.IsVisibleInTree())
+        {
+            result["screen"] = "loading";
+            return result;
+        }
+
+        // Check if character select is visible
+        var charSelectScreen = mainMenu.GetNodeOrNull<Godot.Control>("Submenus/CharacterSelectScreen");
+        if (charSelectScreen?.Visible == true)
+        {
+            result["screen"] = "character_select";
+
+            var buttonContainer = charSelectScreen.GetNodeOrNull("CharSelectButtons/ButtonContainer");
+            if (buttonContainer != null)
+            {
+                var characters = new List<Dictionary<string, object?>>();
+                var buttons = FindAll<MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect.NCharacterSelectButton>(buttonContainer);
+                foreach (var btn in buttons)
+                {
+                    characters.Add(new Dictionary<string, object?>
+                    {
+                        ["id"] = btn.Character?.Id.Entry,
+                        ["name"] = btn.Character?.Id.Entry,
+                        ["is_locked"] = btn.IsLocked,
+                    });
+                }
+                result["characters"] = characters;
+            }
+
+            var confirmBtn = charSelectScreen.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>("ConfirmButton");
+            result["can_confirm"] = confirmBtn?.IsEnabled ?? false;
+            return result;
+        }
+
+        // Check if singleplayer submenu is visible
+        var spSubmenu = mainMenu.GetNodeOrNull<Godot.Control>("Submenus/SingleplayerSubmenu");
+        if (spSubmenu?.Visible == true)
+        {
+            result["screen"] = "singleplayer_submenu";
+            return result;
+        }
+
+        // Main menu root
+        result["screen"] = "main_menu";
+        var abandonBtn = mainMenu.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>("MainMenuTextButtons/AbandonRunButton");
+        result["has_run_to_abandon"] = abandonBtn?.Visible ?? false;
+        return result;
     }
 }
