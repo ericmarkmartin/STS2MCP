@@ -43,7 +43,9 @@ public static partial class McpMod
     {
         // Actions that work outside of a run
         if (action is "game_over_continue" or "game_over_main_menu"
-            or "click_singleplayer" or "click_standard" or "select_character" or "confirm_character")
+            or "click_singleplayer" or "click_standard" or "select_character" or "confirm_character"
+            or "dismiss_screen" or "click_timeline" or "reveal_epoch" or "timeline_back"
+            or "abandon_run")
         {
             return action switch
             {
@@ -53,6 +55,11 @@ public static partial class McpMod
                 "click_standard" => ExecuteClickStandard(),
                 "select_character" => ExecuteSelectCharacter(data),
                 "confirm_character" => ExecuteConfirmCharacter(),
+                "dismiss_screen" => ExecuteDismissScreen(),
+                "click_timeline" => ExecuteClickTimeline(),
+                "reveal_epoch" => ExecuteRevealEpoch(),
+                "timeline_back" => ExecuteTimelineBack(),
+                "abandon_run" => ExecuteAbandonRun(),
                 _ => Error("unreachable")
             };
         }
@@ -671,9 +678,12 @@ public static partial class McpMod
         if (overlay is not NCardGridSelectionScreen screen)
             return Error("No card selection screen is open");
 
-        // Check all preview containers (upgrade uses UpgradeSinglePreviewContainer / UpgradeMultiPreviewContainer,
-        // NDeckCardSelectScreen uses PreviewContainer with %PreviewConfirm)
-        foreach (var containerName in new[] { "%UpgradeSinglePreviewContainer", "%UpgradeMultiPreviewContainer", "%PreviewContainer" })
+        // Check all preview containers (upgrade, enchant, and generic card select screens)
+        foreach (var containerName in new[] {
+            "%UpgradeSinglePreviewContainer", "%UpgradeMultiPreviewContainer",
+            "%EnchantSinglePreviewContainer", "%EnchantMultiPreviewContainer",
+            "%TransformSinglePreviewContainer", "%TransformMultiPreviewContainer",
+            "%PreviewContainer" })
         {
             var container = screen.GetNodeOrNull<Godot.Control>(containerName);
             if (container?.Visible == true)
@@ -1139,6 +1149,175 @@ public static partial class McpMod
 
         confirmBtn.ForceClick();
         return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = "Confirmed character selection" };
+    }
+
+    private static Dictionary<string, object?> ExecuteAbandonRun()
+    {
+        var root = ((Godot.SceneTree)Godot.Engine.GetMainLoop()).Root;
+        var mainMenu = root.GetNodeOrNull<Godot.Control>("/root/Game/RootSceneContainer/MainMenu");
+        if (mainMenu == null)
+            return Error("Main menu not found");
+
+        // Click abandon button
+        var abandonBtn = mainMenu.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>("MainMenuTextButtons/AbandonRunButton");
+        if (abandonBtn is { Visible: true, IsEnabled: true })
+        {
+            abandonBtn.ForceClick();
+            return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = "Clicked abandon run" };
+        }
+
+        // If a modal confirmation is showing, click yes
+        var modal = MegaCrit.Sts2.Core.Nodes.CommonUi.NModalContainer.Instance?.OpenModal;
+        if (modal != null)
+        {
+            var modalNode = (Godot.Node)modal;
+            var yesBtn = modalNode.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>("VerticalPopup/YesButton");
+            if (yesBtn is { IsEnabled: true })
+            {
+                yesBtn.ForceClick();
+                return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = "Confirmed abandon run" };
+            }
+        }
+
+        return Error("Abandon run button not available");
+    }
+
+    private static Dictionary<string, object?> ExecuteClickTimeline()
+    {
+        var root = ((Godot.SceneTree)Godot.Engine.GetMainLoop()).Root;
+        var mainMenu = root.GetNodeOrNull<Godot.Control>("/root/Game/RootSceneContainer/MainMenu");
+        if (mainMenu == null)
+            return Error("Main menu not found");
+
+        var tlBtn = mainMenu.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>("MainMenuTextButtons/TimelineButton");
+        if (tlBtn is not { Visible: true, IsEnabled: true })
+            return Error("Timeline button not available");
+
+        tlBtn.ForceClick();
+        return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = "Clicked timeline" };
+    }
+
+    private static Dictionary<string, object?> ExecuteRevealEpoch()
+    {
+        var root = ((Godot.SceneTree)Godot.Engine.GetMainLoop()).Root;
+        var mainMenu = root.GetNodeOrNull<Godot.Control>("/root/Game/RootSceneContainer/MainMenu");
+        var timelineSubmenu = mainMenu?.GetNodeOrNull<Godot.Control>("Submenus/TimelineScreen");
+        if (timelineSubmenu is not { Visible: true })
+            return Error("Timeline screen not visible");
+
+        // First check if an inspect screen is open — dismiss it
+        var inspectScreen = timelineSubmenu.GetNodeOrNull<Godot.Control>("%EpochInspectScreen");
+        if (inspectScreen?.Visible == true)
+        {
+            var closeBtn = FindFirst<MegaCrit.Sts2.Core.Nodes.Screens.Timeline.NCloseButton>(inspectScreen);
+            if (closeBtn is { Visible: true, IsEnabled: true })
+            {
+                closeBtn.ForceClick();
+                return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = "Closed inspect screen" };
+            }
+            // Try any button in the inspect screen
+            var anyBtn = FindFirst<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>(inspectScreen);
+            if (anyBtn is { Visible: true, IsEnabled: true })
+            {
+                anyBtn.ForceClick();
+                return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = $"Clicked button in inspect screen: {anyBtn.Name}" };
+            }
+        }
+
+        // Find an obtained (pending) epoch slot and click it
+        var epochSlots = FindAll<MegaCrit.Sts2.Core.Nodes.Screens.Timeline.NEpochSlot>(timelineSubmenu);
+        var obtained = epochSlots.FirstOrDefault(s => s.State == MegaCrit.Sts2.Core.Nodes.Screens.Timeline.EpochSlotState.Obtained);
+        if (obtained != null)
+        {
+            obtained.ForceClick();
+            return new Dictionary<string, object?>
+            {
+                ["status"] = "ok",
+                ["message"] = $"Revealing epoch: {obtained.model?.Id ?? "unknown"}"
+            };
+        }
+
+        return Error("No pending epoch reveals found");
+    }
+
+    private static Dictionary<string, object?> ExecuteTimelineBack()
+    {
+        var root = ((Godot.SceneTree)Godot.Engine.GetMainLoop()).Root;
+        var mainMenu = root.GetNodeOrNull<Godot.Control>("/root/Game/RootSceneContainer/MainMenu");
+        var timelineSubmenu = mainMenu?.GetNodeOrNull<Godot.Control>("Submenus/TimelineScreen");
+        if (timelineSubmenu is not { Visible: true })
+            return Error("Timeline screen not visible");
+
+        var backBtn = timelineSubmenu.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>("BackButton");
+        if (backBtn is not { Visible: true, IsEnabled: true })
+            return Error("Back button not available");
+
+        backBtn.ForceClick();
+        return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = "Going back from timeline" };
+    }
+
+    // --- Generic screen dismissal ---
+
+    private static Dictionary<string, object?> ExecuteDismissScreen()
+    {
+        var root = ((Godot.SceneTree)Godot.Engine.GetMainLoop()).Root;
+
+        // Try timeline/unlock screens (submenu under MainMenu)
+        var mainMenu = root.GetNodeOrNull<Godot.Control>("/root/Game/RootSceneContainer/MainMenu");
+        var timelineScreen = mainMenu?.GetNodeOrNull<Godot.Control>("Submenus/TimelineScreen");
+        if (timelineScreen is { Visible: true } ts)
+        {
+            // Look for acknowledge, confirm, or close buttons
+            var ackBtn = FindFirst<MegaCrit.Sts2.Core.Nodes.Screens.Timeline.NAcknowledgeButton>(ts);
+            if (ackBtn is { Visible: true, IsEnabled: true })
+            {
+                ackBtn.ForceClick();
+                return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = "Dismissed timeline (acknowledge)" };
+            }
+
+            var confirmBtn = FindFirst<MegaCrit.Sts2.Core.Nodes.Screens.Timeline.NUnlockConfirmButton>(ts);
+            if (confirmBtn is { Visible: true, IsEnabled: true })
+            {
+                confirmBtn.ForceClick();
+                return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = "Dismissed timeline (confirm)" };
+            }
+
+            var closeBtn = FindFirst<MegaCrit.Sts2.Core.Nodes.Screens.Timeline.NCloseButton>(ts);
+            if (closeBtn is { Visible: true, IsEnabled: true })
+            {
+                closeBtn.ForceClick();
+                return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = "Dismissed timeline (close)" };
+            }
+
+            // Fallback: find any NButton
+            var anyBtn = FindFirst<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>(ts);
+            if (anyBtn is { Visible: true, IsEnabled: true })
+            {
+                anyBtn.ForceClick();
+                return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = $"Dismissed timeline (button: {anyBtn.Name})" };
+            }
+        }
+
+        // Try any modal
+        var modal = MegaCrit.Sts2.Core.Nodes.CommonUi.NModalContainer.Instance?.OpenModal;
+        if (modal != null)
+        {
+            var modalNode = (Godot.Node)modal;
+            var yesBtn = modalNode.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>("VerticalPopup/YesButton");
+            if (yesBtn is { IsEnabled: true })
+            {
+                yesBtn.ForceClick();
+                return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = "Dismissed modal (yes)" };
+            }
+            var okBtn = FindFirst<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>(modalNode);
+            if (okBtn is { IsEnabled: true })
+            {
+                okBtn.ForceClick();
+                return new Dictionary<string, object?> { ["status"] = "ok", ["message"] = "Dismissed modal" };
+            }
+        }
+
+        return Error("No dismissable screen found");
     }
 
     // --- Game over actions ---

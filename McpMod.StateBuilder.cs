@@ -1051,9 +1051,17 @@ public static partial class McpMod
         var previewSingle = screen.GetNodeOrNull<Godot.Control>("%UpgradeSinglePreviewContainer");
         var previewMulti = screen.GetNodeOrNull<Godot.Control>("%UpgradeMultiPreviewContainer");
         var previewGeneric = screen.GetNodeOrNull<Godot.Control>("%PreviewContainer");
+        var enchantSingle = screen.GetNodeOrNull<Godot.Control>("%EnchantSinglePreviewContainer");
+        var enchantMulti = screen.GetNodeOrNull<Godot.Control>("%EnchantMultiPreviewContainer");
+        var transformSingle = screen.GetNodeOrNull<Godot.Control>("%TransformSinglePreviewContainer");
+        var transformMulti = screen.GetNodeOrNull<Godot.Control>("%TransformMultiPreviewContainer");
         bool previewShowing = (previewSingle?.Visible ?? false)
                             || (previewMulti?.Visible ?? false)
-                            || (previewGeneric?.Visible ?? false);
+                            || (previewGeneric?.Visible ?? false)
+                            || (enchantSingle?.Visible ?? false)
+                            || (enchantMulti?.Visible ?? false)
+                            || (transformSingle?.Visible ?? false)
+                            || (transformMulti?.Visible ?? false);
         state["preview_showing"] = previewShowing;
 
         // Button states - when a preview is open, cancel goes through the
@@ -1584,10 +1592,53 @@ public static partial class McpMod
             return result;
         }
 
+        // Check if timeline submenu is visible
+        var timelineSubmenu = mainMenu.GetNodeOrNull<Godot.Control>("Submenus/TimelineScreen");
+        if (timelineSubmenu?.Visible == true)
+        {
+            result["screen"] = "timeline";
+
+            // Check for pending epoch reveals
+            var epochSlots = FindAll<MegaCrit.Sts2.Core.Nodes.Screens.Timeline.NEpochSlot>(timelineSubmenu);
+            int pendingCount = epochSlots.Count(s => s.State == MegaCrit.Sts2.Core.Nodes.Screens.Timeline.EpochSlotState.Obtained);
+            result["pending_reveals"] = pendingCount;
+
+            // Check for inspect/unlock screens that need dismissal
+            var inspectScreen = mainMenu.GetNodeOrNull<Godot.Control>("Submenus/TimelineScreen/%EpochInspectScreen");
+            bool inspectVisible = inspectScreen?.Visible == true;
+            result["inspect_screen_open"] = inspectVisible;
+
+            if (inspectVisible)
+            {
+                // Look for close/acknowledge/confirm buttons in the inspect screen
+                var closeBtn = FindFirst<MegaCrit.Sts2.Core.Nodes.Screens.Timeline.NCloseButton>(inspectScreen!);
+                result["has_close"] = closeBtn is { Visible: true, IsEnabled: true };
+            }
+
+            // Back button availability
+            var backBtn = timelineSubmenu.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>("BackButton");
+            result["has_back"] = backBtn is { Visible: true, IsEnabled: true };
+
+            return result;
+        }
+
+        // Check for modal (e.g. abandon run confirmation)
+        var modal = MegaCrit.Sts2.Core.Nodes.CommonUi.NModalContainer.Instance?.OpenModal;
+        if (modal != null)
+        {
+            result["screen"] = "modal";
+            result["modal_message"] = "A confirmation dialog is open";
+            return result;
+        }
+
         // Main menu root
         result["screen"] = "main_menu";
         var abandonBtn = mainMenu.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>("MainMenuTextButtons/AbandonRunButton");
         result["has_run_to_abandon"] = abandonBtn?.Visible ?? false;
+        var spBtn = mainMenu.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>("MainMenuTextButtons/SingleplayerButton");
+        result["can_start_run"] = spBtn is { Visible: true, IsEnabled: true };
+        var tlBtn = mainMenu.GetNodeOrNull<MegaCrit.Sts2.Core.Nodes.GodotExtensions.NButton>("MainMenuTextButtons/TimelineButton");
+        result["has_timeline"] = tlBtn is { Visible: true, IsEnabled: true };
         return result;
     }
 }
